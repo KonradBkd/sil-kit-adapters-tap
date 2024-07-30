@@ -6,16 +6,24 @@
 #include "SignalHandler.hpp"
 #include "SilKitAdapterTap.hpp"
 
+#include <thread>
+#include <chrono>
+#include <iomanip>
+#include <sstream>
+
 using namespace exceptions;
 using namespace adapters;
 
 TapConnection::TapConnection(asio::io_context& io_context, const std::string& tapDevName,
                   std::function<void(std::vector<std::uint8_t>)> onNewFrameHandler,
+                  int64_t outboundBandwidthLimitMbitPerSecond,
                   SilKit::Services::Logging::ILogger* logger)
     : _tapDeviceStream{io_context}
     , _onNewFrameHandler(std::move(onNewFrameHandler))
+    , _outboundBandwidthLimitMbitPerSecond(outboundBandwidthLimitMbitPerSecond)
     , _logger(logger)
 {
+    _hasBandwidthLimit = _outboundBandwidthLimitMbitPerSecond > 0;
     _fileDescriptor = GetTapDeviceFileDescriptor(tapDevName.c_str());
 #if WIN32
     throwInvalidFileDescriptorIf(_fileDescriptor == nullptr);
@@ -26,8 +34,37 @@ TapConnection::TapConnection(asio::io_context& io_context, const std::string& ta
     ReceiveEthernetFrameFromTapDevice();
 }
 
+void TapConnection::WaitToApplyBandwidthLimit(const size_t lastBytesRead, const std::chrono::steady_clock::time_point& lastReadTime)
+{
+    const auto lastReadDurationSeconds =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - lastReadTime).count();
+    const auto lastMbitsRead = 8e-6 * lastBytesRead;
+    // We search for the time we need to wait match the bandwidth limit. So:
+    // readBytes / (readTime + waitTime) = limit
+    // Solve for waitTime gives:
+    const auto waitTimeSeconds = std::chrono::duration<double>(lastMbitsRead / _outboundBandwidthLimitMbitPerSecond
+                                                                - lastReadDurationSeconds);
+    if (waitTimeSeconds.count() > 0.0) 
+    {
+        // Busy wait to be precise
+        const auto ts = std::chrono::steady_clock::now();
+        while (std::chrono::steady_clock::now() - ts < waitTimeSeconds)
+        {
+            std::this_thread::yield();
+        }
+    }
+}
+
 void TapConnection::ReceiveEthernetFrameFromTapDevice()
 {
+    static auto lastReadTime = std::chrono::steady_clock::now();
+    static size_t lastBytesRead = 0;
+    if (_hasBandwidthLimit)
+    {
+        WaitToApplyBandwidthLimit(lastBytesRead, lastReadTime);
+        lastReadTime = std::chrono::steady_clock::now();
+    }
+
     _tapDeviceStream.async_read_some(
         asio::buffer(_ethernetFrameBuffer.data(), _ethernetFrameBuffer.size()),
         [this](const std::error_code ec, const std::size_t bytes_received) {
@@ -42,6 +79,7 @@ void TapConnection::ReceiveEthernetFrameFromTapDevice()
                 }
                 else
                 {
+                    lastBytesRead = bytes_received;
                     auto frame_data = std::vector<std::uint8_t>(bytes_received);
                     asio::buffer_copy(asio::buffer(frame_data),
                                         asio::buffer(_ethernetFrameBuffer.data(), _ethernetFrameBuffer.size()),

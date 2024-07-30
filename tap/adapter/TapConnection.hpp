@@ -28,6 +28,7 @@ class TapConnection
 public:
     TapConnection(asio::io_context& io_context, const std::string& tapDevName,
                   std::function<void(std::vector<std::uint8_t>)> onNewFrameHandler,
+                  int64_t outboundBandwidthLimitMbitPerSecond,
                   SilKit::Services::Logging::ILogger* logger);
 
     template<class container>
@@ -43,9 +44,12 @@ public:
 private:
     std::array<std::uint8_t, 1600> _ethernetFrameBuffer;
     std::function<void(std::vector<std::uint8_t>)> _onNewFrameHandler;
+    bool _hasBandwidthLimit;
+    int64_t _outboundBandwidthLimitMbitPerSecond;
     SilKit::Services::Logging::ILogger* _logger;
 
     void ReceiveEthernetFrameFromTapDevice();
+    void WaitToApplyBandwidthLimit(const size_t lastBytesRead, const std::chrono::steady_clock::time_point& lastReadTime);
     inline auto extractErrorMessage(const int errorCode) -> std::string;
 
 #if WIN32

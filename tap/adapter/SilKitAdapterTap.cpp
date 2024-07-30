@@ -59,12 +59,23 @@ int main(int argc, char** argv)
     const std::string participantName = getArgDefault(argc, argv, participantNameArg, "SilKitAdapterTap");
     const std::string ethernetNetworkName = getArgDefault(argc, argv, networkArg, "tap_demo");
     const std::string ethernetControllerName = "SilKit_ETH_CTRL_1";
-
+    const std::string outboundBandwidthLimitMbitPerSecondStr = getArgDefault(argc, argv, outboundBandwidthLimitArg, "UNUSED");
+    
     asio::io_context ioContext;
 
     try
     {
         throwInvalidCliIf(thereAreUnknownArguments(argc, argv));
+
+        int64_t outboundBandwidthLimitMbitPerSecond = 0; // Off
+        if (outboundBandwidthLimitMbitPerSecondStr != "UNUSED")
+        {
+            outboundBandwidthLimitMbitPerSecond = adapters::convertStringToInt(outboundBandwidthLimitMbitPerSecondStr);
+            if (outboundBandwidthLimitMbitPerSecond <= 0)
+            {
+                throw exceptions::InvalidCli();
+            }
+        }
 
         std::shared_ptr<SilKit::Config::IParticipantConfiguration> participantConfiguration;
         if (!configurationFile.empty())
@@ -137,7 +148,7 @@ int main(int argc, char** argv)
         SILKitInfoMessage.str("");
         SILKitInfoMessage << "Creating TAP device ethernet connector for [" << tapDevName << "]";
         logger->Info(SILKitInfoMessage.str());
-        TapConnection tapConnection{ioContext, tapDevName, onReceiveEthernetFrameFromTapDevice, logger};
+        TapConnection tapConnection{ioContext, tapDevName, onReceiveEthernetFrameFromTapDevice, outboundBandwidthLimitMbitPerSecond, logger};
 
         const auto onReceiveEthernetMessageFromSilKit = [&logger, &tapConnection](IEthernetController* /*controller*/,
                                                                                   const EthernetFrameEvent& msg) {

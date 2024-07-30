@@ -53,6 +53,14 @@ char** findArgOf(int argc, char** argv, const std::string& argument, char** args
 std::string getArgDefault(int argc, char** argv, const std::string& argument, const std::string& defaultValue);
 
 /// <summary>
+/// Converts str to int with std::stoi.
+/// Thows InvalidCli on failed conversion
+/// </summary>
+/// <param name="str">The string to convert.</param>
+/// <returns>The converted value.</returns>
+int64_t convertStringToInt(const std::string& str);
+
+/// <summary>
 /// Small utility function to quickly check if "it" is not "cont.end()"
 /// </summary>
 template <typename iterator, typename container>
@@ -114,5 +122,11 @@ const std::string participantNameArg = "--name";
 /// string containing the argument requesting the help message.
 /// </summary>
 const std::string helpArg = "--help";
+
+/// <summary>
+/// string containing the argument for the outbound bandwidth limit.
+/// </summary>
+const std::string outboundBandwidthLimitArg = "--bandwidth";
+
 
 } // namespace adapters
